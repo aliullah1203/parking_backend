@@ -9,7 +9,12 @@ import (
 )
 
 func Login(w http.ResponseWriter, r *http.Request) {
-	var req models.User
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
@@ -22,12 +27,18 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !helpers.VerifyPassword(user.Password, req.Password) {
+	// Plain text comparison
+	if user.Password != req.Password {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
-	accessToken, refreshToken, _ := helpers.GenerateTokens(user.ID.String(), user.Role)
+	accessToken, refreshToken, err := helpers.GenerateTokens(user.ID.String(), user.Role)
+	if err != nil {
+		http.Error(w, "Failed to generate tokens", http.StatusInternalServerError)
+		return
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"user": map[string]interface{}{
 			"id":    user.ID,
