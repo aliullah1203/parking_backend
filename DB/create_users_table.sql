@@ -6,6 +6,9 @@ CREATE TABLE Users (
     email VARCHAR(255) NOT NULL UNIQUE,
     phone VARCHAR(50) UNIQUE,
     address TEXT,
+    license VARCHAR(255),
+    nid VARCHAR(255),
+    picture TEXT, -- store Base64 or image URL
     role VARCHAR(50) DEFAULT 'CUSTOMER',
     status VARCHAR(50) DEFAULT 'ACTIVE',
     subscription_status VARCHAR(50) DEFAULT 'SUBSCRIBED',

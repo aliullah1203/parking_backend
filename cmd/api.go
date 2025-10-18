@@ -12,6 +12,8 @@ import (
 
 func Api() {
 	// Load environment variables
+	log.Println("DB_HOST from .env:", os.Getenv("DB_HOST"))
+
 	err := godotenv.Load()
 	if err != nil {
 		log.Println("Error loading .env file")

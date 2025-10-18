@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
+// Signup creates a new user
 func Signup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -24,7 +26,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Println("Decode error:", err)
+		log.Println("Signup decode error:", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -34,10 +36,11 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if email or phone already exists
 	var count int
 	err := config.DB.Get(&count, "SELECT COUNT(*) FROM users WHERE email=$1 OR phone=$2", req.Email, req.Contact)
 	if err != nil {
-		log.Println("DB query error:", err)
+		log.Println("Signup DB query error:", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
@@ -46,33 +49,40 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Println("Signup password hashing error:", err)
+		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		return
+	}
+
 	user := models.User{
-		ID:                 uuid.New(),
+		ID:                 uuid.New().String(),
 		Name:               req.Name,
 		Email:              req.Email,
 		Phone:              req.Contact,
 		Role:               "CUSTOMER",
 		Status:             "ACTIVE",
 		SubscriptionStatus: "SUBSCRIBED",
-		Password:           req.Password,
+		Password:           string(hashedPassword),
 		CreatedAt:          time.Now(),
 		UpdatedAt:          time.Now(),
 	}
 
 	_, err = config.DB.NamedExec(`
-		INSERT INTO users 
-		(id, name, email, phone, role, status, subscription_status, password, created_at, updated_at)
+		INSERT INTO users (id, name, email, phone, role, status, subscription_status, password, created_at, updated_at)
 		VALUES (:id,:name,:email,:phone,:role,:status,:subscription_status,:password,:created_at,:updated_at)
 	`, &user)
 	if err != nil {
-		log.Println("DB insert error:", err)
+		log.Println("Signup DB insert error:", err)
 		http.Error(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
 
-	accessToken, refreshToken, err := helpers.GenerateTokens(user.ID.String(), user.Role)
+	accessToken, refreshToken, err := helpers.GenerateTokens(user.ID, user.Role)
 	if err != nil {
-		log.Println("Token generation error:", err)
+		log.Println("Signup token generation error:", err)
 		http.Error(w, "Failed to generate tokens", http.StatusInternalServerError)
 		return
 	}

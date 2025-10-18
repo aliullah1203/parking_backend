@@ -3,92 +3,105 @@ package helpers
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
-// Password helpers
-func VerifyPassword(stored, provided string) bool {
-	return stored == provided
+type Claims struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
+	jwt.RegisteredClaims
 }
 
-func HashPassword(password string) string {
-	return password
-}
+var jwtSecret []byte
 
-// AuthMiddleware validates token and stores claims in context
-func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("Authorization")
-		if token == "" {
-			http.Error(w, "authorization required", http.StatusUnauthorized)
-			return
-		}
-		if len(token) > 7 && token[:7] == "Bearer " {
-			token = token[7:]
-		}
-
-		claims, err := ValidateToken(token)
-		if err != nil {
-			log.Println("Invalid token:", err)
-			http.Error(w, "invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		// Store claims in context
-		ctx := contextWithClaims(r.Context(), claims)
-		r = r.WithContext(ctx)
-
-		next.ServeHTTP(w, r)
+func InitJWTSecret() {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		panic("JWT_SECRET not set in .env")
 	}
+	jwtSecret = []byte(secret)
 }
 
-// Dummy token validator
-func ValidateToken(token string) (map[string]interface{}, error) {
-	if token == "valid-token" {
-		return map[string]interface{}{
-			"user_id": "123",
-			"role":    "ADMIN", // Add role here for testing
-		}, nil
+// GenerateTokens creates access and refresh tokens
+func GenerateTokens(userID, role string) (string, string, error) {
+	accessClaims := &Claims{
+		UserID: userID,
+		Role:   role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(4 * time.Hour)),
+		},
 	}
+	accessToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims).SignedString(jwtSecret)
+	if err != nil {
+		return "", "", err
+	}
+
+	refreshClaims := &Claims{
+		UserID: userID,
+		Role:   role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
+		},
+	}
+	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims).SignedString(jwtSecret)
+	if err != nil {
+		return "", "", err
+	}
+
+	return accessToken, refreshToken, nil
+}
+
+// ValidateToken parses a token string
+func ValidateToken(tokenStr string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		return claims, nil
+	}
+
 	return nil, errors.New("invalid token")
 }
 
-// Context helpers
-type claimsKeyType string
+// Context key type
+type contextKey string
 
-const claimsKey claimsKeyType = "claims"
+const claimsKey contextKey = "claims"
 
-func contextWithClaims(ctx context.Context, claims map[string]interface{}) context.Context {
-	return context.WithValue(ctx, claimsKey, claims)
-}
-
-func GetClaimsFromContext(ctx context.Context) (map[string]interface{}, bool) {
-	claims, ok := ctx.Value(claimsKey).(map[string]interface{})
-	return claims, ok
-}
-
-// Role authorization middleware
-func AuthorizeRole(next http.Handler, roles ...string) http.Handler {
+// AuthMiddleware validates JWT and adds claims to context
+func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := GetClaimsFromContext(r.Context())
-		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
 			return
 		}
 
-		role, ok := claims["role"].(string)
-		if !ok {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, err := ValidateToken(tokenStr)
+		if err != nil {
+			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 
-		for _, allowed := range roles {
-			if role == allowed {
-				next.ServeHTTP(w, r)
-				return
-			}
-		}
-		http.Error(w, "Forbidden", http.StatusForbidden)
+		ctx := context.WithValue(r.Context(), claimsKey, claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// GetClaimsFromContext retrieves claims from request context
+func GetClaimsFromContext(r *http.Request) *Claims {
+	if claims, ok := r.Context().Value(claimsKey).(*Claims); ok {
+		return claims
+	}
+	return nil
 }

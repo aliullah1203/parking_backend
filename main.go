@@ -5,7 +5,8 @@ import (
 	"net/http"
 	"os"
 	"parking_management_system_backend/config"
-	"parking_management_system_backend/controllers"
+	"parking_management_system_backend/helpers"
+	"parking_management_system_backend/routes"
 
 	"github.com/joho/godotenv"
 )
@@ -16,13 +17,15 @@ func main() {
 	if err != nil {
 		log.Println("Error loading .env file")
 	}
+	helpers.InitJWTSecret()
+
+	log.Println("DB_HOST from .env:", os.Getenv("DB_HOST"))
 
 	// Connect to PostgreSQL
 	config.ConnectPostgres()
 
-	// Routes
-	http.HandleFunc("/api/signup", controllers.Signup)
-	http.HandleFunc("/api/login", controllers.Login) // if you have login
+	// Register routes
+	routes.SetupRoutes()
 
 	// CORS middleware
 	handler := corsMiddleware(http.DefaultServeMux)
@@ -43,11 +46,14 @@ func main() {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+
 		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
 			return
 		}
+
 		next.ServeHTTP(w, r)
 	})
 }
