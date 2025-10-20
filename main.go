@@ -1,14 +1,15 @@
 package main
 
 import (
-	"log"
-	"net/http"
-	"os"
-	"parking_management_system_backend/config"
-	"parking_management_system_backend/helpers"
-	"parking_management_system_backend/routes"
+    "log"
+    "net/http"
+    "os"
+    "parking_management_system_backend/config"
+    "parking_management_system_backend/helpers"
+    "parking_management_system_backend/jobs"
+    "parking_management_system_backend/routes"
 
-	"github.com/joho/godotenv"
+    "github.com/joho/godotenv"
 )
 
 func main() {
@@ -23,6 +24,8 @@ func main() {
 
 	// Connect to PostgreSQL
 	config.ConnectPostgres()
+    // Start reminder job
+    jobs.StartEmailReminderJob()
 
 	// Register routes
 	routes.SetupRoutes()
@@ -47,7 +50,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        w.Header().Set("Access-Control-Allow-Methods", "POST, GET, PUT, DELETE, OPTIONS")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
