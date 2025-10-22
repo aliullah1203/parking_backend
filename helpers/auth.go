@@ -12,26 +12,28 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Claims struct
+// Claims struct for JWT
 type Claims struct {
 	UserID string `json:"user_id"`
 	Role   string `json:"role"`
 	jwt.RegisteredClaims
 }
 
+// JWT secret
 var jwtSecret []byte
 
-// Initialize JWT secret
+// InitJWTSecret loads JWT secret from environment
 func InitJWTSecret() {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		log.Fatal("JWT_SECRET not set")
+		log.Fatal("JWT_SECRET not set in .env")
 	}
 	jwtSecret = []byte(secret)
 }
 
-// Generate tokens
+// GenerateTokens creates access and refresh tokens
 func GenerateTokens(userID, role string) (string, string, error) {
+	// Access token (short-lived)
 	accessClaims := &Claims{
 		UserID: userID,
 		Role:   role,
@@ -44,6 +46,7 @@ func GenerateTokens(userID, role string) (string, string, error) {
 		return "", "", err
 	}
 
+	// Refresh token (long-lived)
 	refreshClaims := &Claims{
 		UserID: userID,
 		Role:   role,
@@ -59,7 +62,7 @@ func GenerateTokens(userID, role string) (string, string, error) {
 	return accessToken, refreshToken, nil
 }
 
-// Validate token
+// ValidateToken parses and validates a JWT token
 func ValidateToken(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		return jwtSecret, nil
@@ -71,16 +74,15 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
 		return claims, nil
 	}
-
 	return nil, errors.New("invalid token")
 }
 
-// Context key
+// contextKey type for storing claims in context
 type contextKey string
 
 const claimsKey contextKey = "claims"
 
-// AuthMiddleware
+// AuthMiddleware protects routes and injects claims into context
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -90,26 +92,21 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-			return jwtSecret, nil
-		})
-		if err != nil || !token.Valid {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+		claims, err := ValidateToken(tokenString)
+		if err != nil {
+			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 
-		if claims, ok := token.Claims.(*Claims); ok {
-			ctx := context.WithValue(r.Context(), "claims", claims)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		} else {
-			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-		}
+		// Pass claims in context
+		ctx := context.WithValue(r.Context(), claimsKey, claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// GetClaimsFromContext returns claims from request context
+// GetClaimsFromContext retrieves JWT claims from request context
 func GetClaimsFromContext(r *http.Request) *Claims {
-	if claims, ok := r.Context().Value("claims").(*Claims); ok {
+	if claims, ok := r.Context().Value(claimsKey).(*Claims); ok {
 		return claims
 	}
 	return nil

@@ -20,7 +20,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name            string `json:"name"`
 		Email           string `json:"email"`
-		Contact         string `json:"contact"`
+		Phone           string `json:"phone"`
 		Password        string `json:"password"`
 		ConfirmPassword string `json:"confirmPassword"`
 	}
@@ -38,7 +38,8 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 
 	// Check if email or phone already exists
 	var count int
-	err := config.DB.Get(&count, "SELECT COUNT(*) FROM users WHERE email=$1 OR phone=$2", req.Email, req.Contact)
+	err := config.DB.Get(&count, "SELECT COUNT(*) FROM users WHERE email=$1 OR phone=$2", req.Email, req.Phone)
+
 	if err != nil {
 		log.Println("Signup DB query error:", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -61,7 +62,7 @@ func Signup(w http.ResponseWriter, r *http.Request) {
 		ID:                 uuid.New().String(),
 		Name:               req.Name,
 		Email:              req.Email,
-		Phone:              req.Contact,
+		Phone:              req.Phone,
 		Role:               "CUSTOMER",
 		Status:             "ACTIVE",
 		SubscriptionStatus: "SUBSCRIBED",
