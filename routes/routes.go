@@ -48,8 +48,9 @@ func SetupRoutes() {
 		userJSON, _ := json.Marshal(user)
 		userEncoded := url.QueryEscape(string(userJSON))
 
+		// 🔹 Redirect to React OAuthRedirect component
 		frontendURL := fmt.Sprintf(
-			"http://localhost:3000/dashboard?access_token=%s&refresh_token=%s&user=%s",
+			"http://localhost:3000/oauth2/redirect?access_token=%s&refresh_token=%s&user=%s",
 			accessToken, refreshToken, userEncoded,
 		)
 		http.Redirect(w, r, frontendURL, http.StatusSeeOther)
